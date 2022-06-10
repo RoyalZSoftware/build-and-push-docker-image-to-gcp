@@ -1,0 +1,68 @@
+name: Build and Push Image to Gcp
+description: Builds and Push Image to Google Cloud Platform
+
+inputs:
+  project_id:
+    required: true
+    description: "Project id"
+  project_name:
+    required: true
+    description: "Project name"
+  region:
+    required: false
+    default: europe-west3
+    description: "Gcp region"
+  google_credentials:
+    required: true
+    description: "Gcp service account credentials"
+  secret_key_base:
+    required: true
+    description: "Content of config/master.key"
+
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+    - uses: docker-practice/actions-setup-docker@v1
+    - uses: google-github-actions/setup-gcloud@v0
+    - uses: google-github-actions/auth@v0
+      with:
+        credentials_json: ${{inputs.google_credentials}}
+    - name: Login Docker
+      env:
+        REGION: ${{inputs.region}}
+      shell: bash
+      run: |-
+        gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin $REGION-docker.pkg.dev
+    - uses: satackey/action-docker-layer-caching@v0.0.11
+      # Ignore the failure of a step and avoid terminating the job.
+      continue-on-error: true
+    - name: Build Image
+      shell: bash
+      env:
+        SECRET_KEY_BASE: ${{inputs.secret_key_base}}
+        DOCKER_IMAGE_URL: ${{inputs.region}}-docker.pkg.dev/${{inputs.project_id}}/${{inputs.project_name}}/app
+      run: |-
+        docker pull $DOCKER_IMAGE_URL:latest || true
+        docker build --build-arg MASTER_KEY=$SECRET_KEY_BASE --cache-from $DOCKER_IMAGE_URL:latest -t $DOCKER_IMAGE_URL:latest .
+    - name: Tag Image Production
+      shell: bash
+      env:
+        DOCKER_IMAGE_URL: ${{inputs.region}}-docker.pkg.dev/${{inputs.project_id}}/${{inputs.project_name}}/app
+      if: ${{github.ref_type == 'tag'}}
+      run: |-
+        docker tag $DOCKER_IMAGE_URL:latest $DOCKER_IMAGE_URL:${GITHUB_REF##*/}
+    - name: Tag Image Other
+      shell: bash
+      env:
+        GH_SHA: ${{github.sha}}
+        DOCKER_IMAGE_URL: ${{inputs.region}}-docker.pkg.dev/${{inputs.project_id}}/${{inputs.project_name}}/app
+      run: |-
+        docker tag $DOCKER_IMAGE_URL:latest $DOCKER_IMAGE_URL:$GH_SHA
+    - name: Push Image
+      shell: bash
+      env:
+        DOCKER_IMAGE_URL: ${{inputs.region}}-docker.pkg.dev/${{inputs.project_id}}/${{inputs.project_name}}/app
+      run: |-
+        docker push $DOCKER_IMAGE_URL --all-tags
