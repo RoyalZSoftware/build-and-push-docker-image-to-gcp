@@ -24,7 +24,7 @@ runs:
   using: "composite"
   steps:
     - uses: actions/checkout@v3
-    - uses: docker-practice/actions-setup-docker@v1
+    - uses: docker-practice/actions-setup-docker@d72f58f773fe601c2ef1da7516b64df35cbba57c
     - uses: google-github-actions/setup-gcloud@v0
     - uses: google-github-actions/auth@v0
       with:
